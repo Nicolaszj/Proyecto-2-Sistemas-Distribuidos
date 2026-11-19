@@ -19,15 +19,6 @@ data "aws_subnet" "zona_b" {
   default_for_az    = true
 }
 
-# Tabla de rutas principal de la VPC por defecto (para el endpoint de S3).
-data "aws_route_table" "principal" {
-  vpc_id = data.aws_vpc.defecto.id
-  filter {
-    name   = "association.main"
-    values = ["true"]
-  }
-}
-
 # Imagen más reciente de Amazon Linux 2023 para las EC2.
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true

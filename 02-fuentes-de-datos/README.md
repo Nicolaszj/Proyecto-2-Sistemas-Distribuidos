@@ -18,7 +18,7 @@ datos/online-retail-dataset.csv.zip
 ```
 
 - **RDS MariaDB** (`infra/fuente_rds.tf`): `db.t3.micro`, MariaDB 10.11, **privada** (no tiene IP pública; solo
-  entran Glue y la EC2 fuente). Base `retaildb` con 3 tablas en inglés, como vendrían de un ERP.
+  entra la EC2 fuente, que es la que hace la extracción hacia S3). Base `retaildb` con 3 tablas en inglés, como vendrían de un ERP.
 - **EC2 fuente de archivos** (`infra/fuente_ec2.tf`): Amazon Linux 2023. Su `user_data`
   (`infra/plantillas/fuente_ec2_user_data.sh.tftpl`) baja el dataset y los scripts del bucket, corre
   `preparar_fuentes.py`, carga el RDS y deja los 13 CSV en `/srv/ventas`. Sin puertos abiertos: se entra con

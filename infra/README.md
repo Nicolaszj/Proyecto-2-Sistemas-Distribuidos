@@ -12,12 +12,12 @@ qué punto del enunciado pertenece.
 | `variables.tf` / `terraform.tfvars.example` | Parámetros: región, prefijo, IP del equipo, `crear_emr`, tamaños, horario | — |
 | `locals.tf` | Nombres calculados: bucket, roles de AWS Academy, bases del catálogo, lista de preguntas | — |
 | `datos_cuenta.tf` | *Lee* (no crea): cuenta, VPC por defecto, subredes a/b, tabla de rutas, AMI Amazon Linux 2023 | — |
-| `red.tf` | 5 security groups (glue, fuente, rds, app, emr_admin) + VPC endpoint de S3 | 2, 3, 8 |
-| `s3_datalake.tf` | Bucket privado y cifrado, carpetas raw/trusted/refined, subida del código (`scripts/…`) y del dataset (`seed/…`) | 3, 4, 7 |
+| `red.tf` | 4 security groups (fuente, rds, app, emr_admin) | 2, 8 |
+| `s3_datalake.tf` | Bucket (creado con la AWS CLI desde un `terraform_data`, ver restricciones), carpetas raw/trusted/refined, subida del código (`scripts/…`) y del dataset (`seed/…`) | 3, 4, 7 |
 | `fuente_rds.tf` | Clave aleatoria, grupo de subredes, RDS MariaDB privado | 2 |
 | `fuente_ec2.tf` | EC2 fuente de archivos con su `user_data` | 2, 3 |
 | `glue_catalogo.tf` | Bases `retail_raw/trusted/refined`, clasificador CSV, 3 crawlers | 5 |
-| `glue_jobs.tf` | Glue Connection JDBC + 4 jobs (ingesta-rds, ingesta-url, raw-a-trusted, trusted-a-refined) | 3, 4, 7 |
+| `glue_jobs.tf` | 4 jobs (ingesta-rds vía SSM, ingesta-url, raw-a-trusted, trusted-a-refined) | 3, 4, 7 |
 | `glue_workflow.tf` | Workflow + 4 triggers (programado y condicionales) | 3 |
 | `athena.tf` | Workgroup con carpeta de resultados + 6 *saved queries* | 6 |
 | `emr.tf` | Clúster EMR 7.10 (Hadoop, Hive, Spark, Hue, JupyterHub, Livy) con Glue como metastore | 5, 6, 7 |
@@ -50,7 +50,7 @@ qué punto del enunciado pertenece.
 
 ```
 S3 bucket ─► subir código y dataset ─┬─► Glue jobs, crawlers, workflow, Athena
-security groups ─► RDS (≈ 8 min) ────┼─► Glue Connection ─► job ingesta-rds
+security groups ─► RDS (≈ 5 min) ────┤
                                      └─► EC2 fuente (carga el RDS y sube los CSV ≈ 4 min)
 Athena + catálogo refined ─► Lambda ─► API Gateway ─► EC2 Streamlit (≈ 3 min instalando)
 crear_emr = true ─► EMR (≈ 12-15 min)
@@ -65,6 +65,15 @@ crear_emr = true ─► EMR (≈ 12-15 min)
 - **CloudShell tiene 1 GB en $HOME** → `scripts/preparar_cloudshell.sh` pone los plugins en `/tmp`
   (`TF_DATA_DIR`) y deja el estado `terraform.tfstate` en `infra/` (persistente).
 - **El crédito es limitado** → EMR solo con `crear_emr = true` y con apagado automático por inactividad.
+
+- **El recurso `aws_s3_bucket` falla** porque una política de la organización (SCP) prohíbe lecturas que el
+  provider hace siempre (por ejemplo `s3:GetBucketObjectLockConfiguration`). El bucket se crea con la AWS CLI desde
+  un `terraform_data` que también lo borra en el `destroy`. Los buckets nuevos ya son privados y cifrados.
+- **Glue no puede entrar a la VPC** (sus interfaces de red nunca se conectan), así que no lee el RDS privado por
+  JDBC: el job `ingesta-rds` le ordena la extracción a la EC2 fuente con SSM Run Command.
+- **Máximo 9 instancias EC2 encendidas** en la cuenta (las sobrantes se apagan solas). El proyecto usa 2 EC2 + 3 del
+  EMR = 5: antes de desplegar, apagar o borrar las de otros laboratorios.
+- **Las etiquetas no aceptan comas** en el valor (por eso `Equipo` usa guiones).
 
 ## Comandos
 

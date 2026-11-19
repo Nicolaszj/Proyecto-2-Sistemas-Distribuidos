@@ -65,7 +65,7 @@ flowchart LR
     URL{{APIs públicas<br/>Frankfurter, Banco Mundial}}
   end
   subgraph Ingesta["③ Ingesta automática"]
-    J1[Glue job ingesta-rds]
+    J1[Glue job ingesta-rds<br/>SSM → EC2 extrae]
     CRON[cron EC2: aws s3 sync]
     J2[Glue job ingesta-url]
   end
@@ -89,6 +89,8 @@ flowchart LR
 1. `terraform apply` crea todo y sube el código del repo a `s3://<bucket>/scripts/`.
 2. La **EC2 fuente** arranca, corre `preparar_fuentes.py` (reparte el dataset en sus 13 CSV y en los INSERT del
    RDS), carga el **RDS** y programa un **cron** que sube sus CSV a `raw/ec2/` cada 10 minutos.
+   El job `ingesta-rds` le ordena a esta EC2 (por SSM Run Command) extraer el RDS a `raw/rds/`: en AWS Academy
+   Glue no puede entrar a la VPC, la EC2 sí.
 3. El **Glue Workflow** (diario a las 6:00 a.m. Colombia, o a mano con `scripts/ejecutar_pipeline.sh`) corre:
    `ingesta-rds` + `ingesta-url` → `raw-a-trusted` + crawler raw → crawler trusted + `trusted-a-refined` →
    crawler refined.
@@ -111,12 +113,12 @@ API de DataFrames. Los cuatro motores deben dar el mismo resultado: es nuestra v
 ├── docs/arquitectura.svg|png          ← diagrama de arquitectura
 ├── infra/                             ← TERRAFORM: toda la infraestructura (ver infra/README.md)
 │   ├── versions.tf  variables.tf  locals.tf  datos_cuenta.tf  outputs.tf
-│   ├── red.tf             security groups + endpoint S3
+│   ├── red.tf             security groups (RDS solo desde la EC2 fuente)
 │   ├── s3_datalake.tf     bucket, zonas, subida del código y del dataset
 │   ├── fuente_rds.tf      RDS MariaDB                         (punto 2)
 │   ├── fuente_ec2.tf      EC2 fuente de archivos + cron       (puntos 2 y 3)
 │   ├── glue_catalogo.tf   bases del catálogo + 3 crawlers     (punto 5)
-│   ├── glue_jobs.tf       conexión JDBC + 4 jobs              (puntos 3, 4 y 7)
+│   ├── glue_jobs.tf       4 jobs de Glue                      (puntos 3, 4 y 7)
 │   ├── glue_workflow.tf   orquestación automática             (punto 3)
 │   ├── athena.tf          workgroup + 6 saved queries         (punto 6)
 │   ├── emr.tf             clúster EMR (con crear_emr = true) (puntos 5, 6 y 7)
@@ -179,8 +181,8 @@ El paso a paso detallado de cada punto, con lo que se debe ver y qué capturar, 
 ## Costos y seguridad
 
 - **EMR** es lo único costoso: solo existe con `crear_emr = true` y se apaga solo tras 2 h sin trabajo.
-- El **RDS no es público**; solo entran por el puerto 3306 los jobs de Glue y la EC2 fuente. Su clave la genera
-  Terraform y solo queda en la Glue Connection y en la EC2 (archivo con permisos 600).
+- El **RDS no es público**; solo entra por el puerto 3306 la EC2 fuente. Su clave la genera
+  Terraform y solo queda dentro de la EC2 fuente (archivo con permisos 600).
 - El **bucket es privado y cifrado**. No hay llaves de AWS en el código: todo usa `LabRole` / `LabInstanceProfile`.
 - Hue, JupyterHub y SSH del EMR solo aceptan conexiones desde la IP del equipo (`ip_administrador`).
 

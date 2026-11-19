@@ -31,7 +31,7 @@ provider "aws" {
   default_tags {
     tags = {
       Proyecto = "SI3007-Proyecto2-BigData"
-      Equipo   = "Nicolas Zapata, Abraham Navarro, Samuel Henao"
+      Equipo   = "Nicolas Zapata - Abraham Navarro - Samuel Henao"
       Gestion  = "terraform"
     }
   }

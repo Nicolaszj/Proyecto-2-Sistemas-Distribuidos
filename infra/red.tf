@@ -1,33 +1,11 @@
 # Red y firewalls (security groups). Se usa la VPC por defecto de la cuenta.
 #
 #   ┌──────────── VPC por defecto ───────────────────────────────────────┐
-#   │  sg_glue  ──3306──►  sg_rds  ◄──3306──  sg_fuente (EC2 archivos)   │
-#   │  (jobs de Glue)      (MariaDB)                                     │
+#   │  sg_rds (MariaDB) ◄──3306── sg_fuente (EC2 archivos + extracción)  │
+#   │  (el RDS no tiene IP pública; solo entra la EC2 fuente)            │
 #   │  sg_app  ◄──8501── internet (tablero Streamlit)                    │
 #   │  sg_emr_admin ◄── 22/8888/9443 solo desde ip_administrador         │
 #   └────────────────────────────────────────────────────────────────────┘
-
-# Glue exige que su security group se permita a sí mismo todo el tráfico TCP
-# (los workers de Spark hablan entre ellos).
-resource "aws_security_group" "glue" {
-  name        = "${var.proyecto}-sg-glue"
-  description = "Jobs de Glue con conexion JDBC al RDS"
-  vpc_id      = data.aws_vpc.defecto.id
-
-  ingress {
-    description = "Trafico entre workers de Glue"
-    from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
-    self        = true
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
 
 resource "aws_security_group" "fuente" {
   name        = "${var.proyecto}-sg-fuente-archivos"
@@ -42,18 +20,18 @@ resource "aws_security_group" "fuente" {
   }
 }
 
-# La base de datos NO es publica: solo entran Glue y la EC2 fuente.
+# La base de datos NO es publica: solo entra la EC2 fuente (Glue extrae a traves de ella por SSM).
 resource "aws_security_group" "rds" {
   name        = "${var.proyecto}-sg-rds"
-  description = "MariaDB: solo desde Glue y desde la EC2 fuente"
+  description = "MariaDB: solo desde Glue y desde la EC2 fuente" # texto fijo: cambiarlo recrea el SG; el acceso real es la regla de abajo
   vpc_id      = data.aws_vpc.defecto.id
 
   ingress {
-    description     = "MariaDB desde Glue y la EC2 fuente"
+    description     = "MariaDB desde la EC2 fuente"
     from_port       = 3306
     to_port         = 3306
     protocol        = "tcp"
-    security_groups = [aws_security_group.glue.id, aws_security_group.fuente.id]
+    security_groups = [aws_security_group.fuente.id]
   }
   egress {
     from_port   = 0
@@ -110,15 +88,4 @@ resource "aws_security_group" "emr_admin" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-# Los jobs de Glue que entran a la VPC (para leer el RDS) no tienen IP pública:
-# este endpoint gratuito les deja escribir en S3 sin salir a internet.
-resource "aws_vpc_endpoint" "s3" {
-  vpc_id            = data.aws_vpc.defecto.id
-  service_name      = "com.amazonaws.${var.region}.s3"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids   = [data.aws_route_table.principal.id]
-
-  tags = { Name = "${var.proyecto}-endpoint-s3" }
 }

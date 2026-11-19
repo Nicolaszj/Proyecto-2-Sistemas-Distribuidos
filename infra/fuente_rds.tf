@@ -28,7 +28,7 @@ resource "aws_db_instance" "mariadb" {
 
   db_subnet_group_name   = aws_db_subnet_group.rds.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false # nadie desde internet; solo Glue y la EC2 fuente
+  publicly_accessible    = false # nadie desde internet; solo la EC2 fuente
 
   multi_az                = false
   backup_retention_period = 0 # laboratorio: sin backups (crea más rápido)

@@ -3,11 +3,11 @@
 
 output "bucket_datalake" {
   description = "Bucket S3 del datalake"
-  value       = aws_s3_bucket.datalake.bucket
+  value       = terraform_data.bucket.output
 }
 
 output "rds_endpoint" {
-  description = "Host del RDS MariaDB (privado: solo Glue y la EC2 fuente)"
+  description = "Host del RDS MariaDB (privado: solo la EC2 fuente)"
   value       = aws_db_instance.mariadb.address
 }
 

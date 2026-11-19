@@ -1,30 +1,11 @@
 # PUNTOS 3, 4 y 7 - Jobs de AWS Glue (el código está en las carpetas del repo).
 #
-#   ingesta-rds        03-ingesta/glue/ingesta_rds.py         RDS  -> raw   (Spark + conexión JDBC)
+#   ingesta-rds        03-ingesta/glue/ingesta_rds.py         RDS  -> raw   (Python shell + SSM a la EC2)
 #   ingesta-url        03-ingesta/glue/ingesta_url.py         URLs -> raw   (Python shell)
 #   raw-a-trusted      04-preparacion/glue/raw_a_trusted.py   raw  -> trusted (Spark)
 #   trusted-a-refined  07-pyspark/analitica_pyspark.py        trusted -> refined (Spark)
 #
 # Los 4 usan el rol LabRole y reciben --DATALAKE s3://<bucket>.
-
-# Conexión JDBC de Glue al RDS: guarda URL, usuario y clave, y la subred/SG
-# por donde Glue entra a la VPC. El código nunca ve la clave.
-resource "aws_glue_connection" "rds" {
-  name            = "${var.proyecto}-conexion-rds"
-  connection_type = "JDBC"
-
-  connection_properties = {
-    JDBC_CONNECTION_URL = "jdbc:mysql://${aws_db_instance.mariadb.address}:${aws_db_instance.mariadb.port}/retaildb"
-    USERNAME            = aws_db_instance.mariadb.username
-    PASSWORD            = random_password.db.result
-  }
-
-  physical_connection_requirements {
-    availability_zone      = data.aws_subnet.zona_a.availability_zone
-    subnet_id              = data.aws_subnet.zona_a.id
-    security_group_id_list = [aws_security_group.glue.id]
-  }
-}
 
 locals {
   argumentos_comunes = {
@@ -35,28 +16,30 @@ locals {
   }
 }
 
+# En AWS Academy un job de Glue no puede entrar a la VPC (sus interfaces de red
+# nunca se conectan), así que no alcanza el RDS privado por JDBC. Este job le
+# ordena la extracción a la EC2 fuente (que sí está en la VPC) con SSM Run Command.
 resource "aws_glue_job" "ingesta_rds" {
-  name              = "${var.proyecto}-ingesta-rds"
-  description       = "PUNTO 3: copia las tablas de MariaDB a raw/rds/ (CSV)"
-  role_arn          = local.rol_lab
-  glue_version      = "4.0"
-  worker_type       = "G.1X"
-  number_of_workers = 2
-  timeout           = 20
-  connections       = [aws_glue_connection.rds.name]
+  name         = "${var.proyecto}-ingesta-rds"
+  description  = "PUNTO 3: ordena a la EC2 fuente (SSM) copiar las tablas de MariaDB a raw/rds/ (CSV)"
+  role_arn     = local.rol_lab
+  max_capacity = 0.0625
+  timeout      = 15
 
   command {
-    name            = "glueetl"
+    name            = "pythonshell"
     script_location = "${local.datalake}/scripts/03-ingesta/glue/ingesta_rds.py"
-    python_version  = "3"
+    python_version  = "3.9"
   }
 
-  default_arguments = merge(local.argumentos_comunes, {
-    "--CONNECTION_NAME" = aws_glue_connection.rds.name
-    "--TABLAS"          = join(",", local.tablas_rds)
-  })
+  default_arguments = {
+    "--DATALAKE"         = local.datalake
+    "--INSTANCIA_FUENTE" = aws_instance.fuente.id
+    "--REGION"           = var.region
+    "--job-language"     = "python"
+  }
 
-  depends_on = [aws_s3_object.codigo, aws_vpc_endpoint.s3]
+  depends_on = [aws_s3_object.codigo]
 }
 
 resource "aws_glue_job" "ingesta_url" {

@@ -9,32 +9,29 @@
 #   resultados/ salidas de Hive y SparkSQL (evidencias del punto 6)
 #   athena-results/, emr-logs/, tmp/   carpetas técnicas
 
-resource "aws_s3_bucket" "datalake" {
-  bucket        = local.bucket
-  force_destroy = true # terraform destroy borra el bucket aunque tenga archivos
-}
+# AWS Academy bloquea con una política de la organización (SCP) varias lecturas que
+# hace el recurso aws_s3_bucket del provider (por ejemplo
+# s3:GetBucketObjectLockConfiguration), y el apply falla aunque el bucket sí se crea.
+# Por eso el bucket lo crea la AWS CLI desde un terraform_data: Terraform lo sigue
+# creando en el apply y borrando (con todo su contenido) en el destroy.
+# Los buckets nuevos de S3 ya vienen privados (Block Public Access) y cifrados (SSE-S3).
+resource "terraform_data" "bucket" {
+  input = local.bucket
 
-resource "aws_s3_bucket_public_access_block" "datalake" {
-  bucket                  = aws_s3_bucket.datalake.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
+  provisioner "local-exec" {
+    command = "aws s3api head-bucket --bucket ${self.input} 2>/dev/null || aws s3api create-bucket --bucket ${self.input} --region ${var.region}"
+  }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "datalake" {
-  bucket = aws_s3_bucket.datalake.id
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
+  provisioner "local-exec" {
+    when    = destroy
+    command = "aws s3 rb s3://${self.input} --force"
   }
 }
 
 # Carpetas vacías de las zonas, para que se vean en la consola desde el inicio.
 resource "aws_s3_object" "zonas" {
   for_each = toset(["raw/", "trusted/", "refined/"])
-  bucket   = aws_s3_bucket.datalake.id
+  bucket   = terraform_data.bucket.output
   key      = each.value
   content  = ""
 }
@@ -59,7 +56,7 @@ locals {
 
 resource "aws_s3_object" "codigo" {
   for_each = local.archivos_codigo
-  bucket   = aws_s3_bucket.datalake.id
+  bucket   = terraform_data.bucket.output
   key      = "scripts/${each.value}"
   source   = "${local.raiz}/${each.value}"
   etag     = filemd5("${local.raiz}/${each.value}")
@@ -68,7 +65,7 @@ resource "aws_s3_object" "codigo" {
 # Dataset original (UCI Online Retail). La EC2 fuente lo descarga y lo reparte
 # entre sus archivos y el RDS (02-fuentes-de-datos/preparar_fuentes.py).
 resource "aws_s3_object" "dataset" {
-  bucket = aws_s3_bucket.datalake.id
+  bucket = terraform_data.bucket.output
   key    = "seed/online-retail-dataset.csv.zip"
   source = "${local.raiz}/02-fuentes-de-datos/datos/online-retail-dataset.csv.zip"
   etag   = filemd5("${local.raiz}/02-fuentes-de-datos/datos/online-retail-dataset.csv.zip")
