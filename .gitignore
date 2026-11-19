@@ -1,0 +1,24 @@
+# Terraform: estado, plugins y variables propias (pueden tener la IP del equipo)
+infra/.terraform/
+infra/.terraform.lock.hcl.bak
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform.tfvars
+infra/.construccion/
+crash.log
+
+# Salidas locales de pruebas
+02-fuentes-de-datos/salida/
+08-visualizacion-y-api/matplotlib/graficas/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

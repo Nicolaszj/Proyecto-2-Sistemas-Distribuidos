@@ -1,0 +1,50 @@
+#!/bin/bash
+# user_data de la EC2 "fuente de archivos" (PUNTOS 2 y 3).
+# Terraform reemplaza bucket, db_host, db_user y db_pass antes de enviarlo.
+# Todo lo que imprime queda en /var/log/fuente-setup.log dentro de la EC2.
+set -euxo pipefail
+exec > >(tee -a /var/log/fuente-setup.log) 2>&1
+
+# 1. Paquetes: cliente MariaDB y cron (python3 y aws cli ya vienen en Amazon Linux 2023)
+dnf install -y mariadb105 cronie
+systemctl enable --now crond
+
+# 2. Configuración y código del repo (Terraform los subió a s3://BUCKET/scripts/)
+mkdir -p /opt/fuente /srv/ventas
+echo "BUCKET=${bucket}" > /opt/fuente/config.env
+cat > /opt/fuente/.my.cnf <<'CNF'
+[client]
+host=${db_host}
+user=${db_user}
+password=${db_pass}
+default-character-set=utf8mb4
+CNF
+chmod 600 /opt/fuente/.my.cnf
+aws s3 cp s3://${bucket}/scripts/02-fuentes-de-datos/ /opt/fuente/ --recursive
+aws s3 cp s3://${bucket}/scripts/03-ingesta/ec2/sincronizar_ventas_s3.sh /opt/fuente/
+aws s3 cp s3://${bucket}/seed/online-retail-dataset.csv.zip /opt/fuente/datos/
+chmod +x /opt/fuente/sincronizar_ventas_s3.sh
+
+# 3. Simular las fuentes: archivos mensuales en /srv/ventas + script SQL del ERP
+python3 /opt/fuente/preparar_fuentes.py \
+  --zip /opt/fuente/datos/online-retail-dataset.csv.zip \
+  --salida-archivos /srv/ventas \
+  --salida-sql /opt/fuente/seed_mariadb.sql \
+  --esquema /opt/fuente/sql/esquema_mariadb.sql
+
+# 4. Esperar a que el RDS responda y cargarle los datos maestros
+for intento in $(seq 1 60); do
+  if mysql --defaults-extra-file=/opt/fuente/.my.cnf -e "SELECT 1" retaildb; then break; fi
+  echo "RDS aun no responde (intento $intento), espero 15 s"; sleep 15
+done
+mysql --defaults-extra-file=/opt/fuente/.my.cnf < /opt/fuente/seed_mariadb.sql
+mysql --defaults-extra-file=/opt/fuente/.my.cnf -e \
+  "SELECT 'customers' tabla, COUNT(*) filas FROM customers UNION ALL
+   SELECT 'products', COUNT(*) FROM products UNION ALL
+   SELECT 'countries', COUNT(*) FROM countries" retaildb
+
+# 5. Ingesta automática EC2 -> S3: cron cada 10 minutos + una ejecución ya mismo
+echo "*/10 * * * * root /opt/fuente/sincronizar_ventas_s3.sh >> /var/log/sincronizar-ventas.log 2>&1" \
+  > /etc/cron.d/sincronizar-ventas
+/opt/fuente/sincronizar_ventas_s3.sh >> /var/log/sincronizar-ventas.log 2>&1
+echo "FUENTE LISTA"

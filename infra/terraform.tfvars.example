@@ -1,0 +1,9 @@
+# Copiar como terraform.tfvars y cambiar los valores.
+#   cp terraform.tfvars.example terraform.tfvars
+
+# IP pública del PC desde donde van a abrir Hue y JupyterHub del EMR.
+# En PowerShell:  curl.exe -s https://checkip.amazonaws.com   ->  agregar /32 al final
+ip_administrador = "181.50.10.20/32"
+
+# Dejar en false. En la fase de la demo de Hive/Spark se cambia a true (ver README).
+crear_emr = false

@@ -1,0 +1,29 @@
+#!/bin/bash
+# user_data de la EC2 del tablero Streamlit (PUNTO 8).
+# Terraform reemplaza bucket y api_url. Log: /var/log/streamlit-setup.log
+set -euxo pipefail
+exec > >(tee -a /var/log/streamlit-setup.log) 2>&1
+
+dnf install -y python3.11 python3.11-pip
+mkdir -p /opt/app
+aws s3 cp s3://${bucket}/scripts/08-visualizacion-y-api/streamlit/ /opt/app/ --recursive
+python3.11 -m pip install -r /opt/app/requirements.txt
+
+cat > /etc/systemd/system/streamlit.service <<'UNIT'
+[Unit]
+Description=Tablero Streamlit Proyecto 2
+After=network-online.target
+
+[Service]
+Environment=API_URL=${api_url}
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/python3.11 -m streamlit run /opt/app/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true --browser.gatherUsageStats false
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now streamlit
+echo "STREAMLIT LISTO"

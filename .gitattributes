@@ -1,0 +1,11 @@
+# Los scripts que corren en Linux (EC2, EMR, CloudShell) deben conservar finales de línea LF
+# aunque el repo se clone o edite en Windows.
+*.sh     text eol=lf
+*.tftpl  text eol=lf
+*.py     text eol=lf
+*.sql    text eol=lf
+*.hql    text eol=lf
+*.tf     text eol=lf
+*.md     text eol=lf
+*.zip    binary
+*.png    binary
